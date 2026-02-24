@@ -190,3 +190,45 @@ def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
     assert fake_client.calls == 1
     assert payload[0]["item_id"] == "live-1"
     assert payload[0]["source"] == "fresh"
+
+
+def test_main_ebay_smoke_success(monkeypatch, capsys):
+    class _FakeRealClient:
+        def search(self, request):
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="smoke-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: _FakeRealClient())
+
+    exit_code = main(["ebay-smoke", "--query", "A1990"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["query"] == "A1990"
+    assert payload["result_count"] == 1
+    assert payload["sample_item_id"] == "smoke-1"
+    assert payload["error"] is None
+
+
+def test_main_ebay_smoke_failure(monkeypatch, capsys):
+    class _BrokenClient:
+        def search(self, request):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: _BrokenClient())
+
+    exit_code = main(["ebay-smoke"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["query"] == "A1990"
+    assert payload["result_count"] == 0
+    assert "RuntimeError: boom" in payload["error"]

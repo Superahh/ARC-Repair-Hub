@@ -45,6 +45,12 @@ export EBAY_CLIENT_SECRET="..."
   --storage-path data/raw_results.json
 ```
 
+Run a one-call auth/search smoke diagnostic:
+
+```bash
+.venv/bin/python -m src.app ebay-smoke --query "A1990"
+```
+
 Optional:
 
 - `--output <path>` to save evaluated rows

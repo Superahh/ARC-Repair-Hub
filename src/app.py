@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ from src.config import (
     DEFAULT_PLATFORM_FEE_RATE,
     DEFAULT_RAW_RESULTS_PATH,
 )
-from src.ebay_client import ListingRecord, RealEbayClient, StubEbayClient
+from src.ebay_client import ListingRecord, RealEbayClient, SearchRequest, StubEbayClient
 from src.normalize import assess_risk, normalize_condition
 from src.roi import ROIResult, compare_whole_vs_parts
 from src.search_service import search_and_store
@@ -268,6 +269,61 @@ def _listing_records_to_rows(records: Sequence[ListingRecord]) -> list[dict[str,
     ]
 
 
+def run_ebay_smoke(
+    query: str,
+    sandbox: bool,
+    condition: str | None,
+    min_price: float | None,
+    max_price: float | None,
+    keywords: Sequence[str],
+) -> tuple[dict[str, object], int]:
+    auth_mode = _detect_ebay_auth_mode()
+    try:
+        client = RealEbayClient.from_env(sandbox=sandbox)
+        records = client.search(
+            SearchRequest(
+                query=query,
+                condition=condition,
+                min_price=min_price,
+                max_price=max_price,
+                keywords=tuple(keywords),
+            )
+        )
+    except Exception as exc:
+        payload = {
+            "ok": False,
+            "query": query,
+            "sandbox": sandbox,
+            "auth_mode": auth_mode,
+            "result_count": 0,
+            "sample_item_id": None,
+            "sample_title": None,
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+        return payload, 1
+
+    sample = records[0] if records else None
+    payload = {
+        "ok": True,
+        "query": query,
+        "sandbox": sandbox,
+        "auth_mode": auth_mode,
+        "result_count": len(records),
+        "sample_item_id": sample.item_id if sample else None,
+        "sample_title": sample.title if sample else None,
+        "error": None,
+    }
+    return payload, 0
+
+
+def _detect_ebay_auth_mode() -> str:
+    if os.getenv("EBAY_ACCESS_TOKEN", "").strip():
+        return "access_token"
+    if os.getenv("EBAY_CLIENT_ID", "").strip() and os.getenv("EBAY_CLIENT_SECRET", "").strip():
+        return "oauth_client_credentials"
+    return "unknown"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reseller Radar local search evaluator")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -325,6 +381,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Optional keyword filter; repeat flag for multiple keywords",
     )
+    smoke_parser = subparsers.add_parser("ebay-smoke", help="Run one eBay auth/search smoke check")
+    smoke_parser.add_argument("--query", default="A1990", help="Smoke query (default: A1990)")
+    smoke_parser.add_argument(
+        "--ebay-sandbox",
+        action="store_true",
+        help="Use eBay sandbox endpoints for smoke check",
+    )
+    smoke_parser.add_argument("--condition", default=None, help="Optional condition filter")
+    smoke_parser.add_argument("--min-price", type=float, default=None, help="Optional min purchase price")
+    smoke_parser.add_argument("--max-price", type=float, default=None, help="Optional max purchase price")
+    smoke_parser.add_argument(
+        "--keyword",
+        dest="keywords",
+        action="append",
+        default=[],
+        help="Optional keyword filter; repeat flag for multiple keywords",
+    )
 
     args = parser.parse_args(argv)
 
@@ -373,6 +446,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             save_results(args.output, rows)
         print(json.dumps(rows, indent=2, sort_keys=True))
         return 0
+
+    if args.command == "ebay-smoke":
+        payload, exit_code = run_ebay_smoke(
+            query=args.query,
+            sandbox=args.ebay_sandbox,
+            condition=args.condition,
+            min_price=args.min_price,
+            max_price=args.max_price,
+            keywords=tuple(args.keywords),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return exit_code
 
     parser.print_help(sys.stderr)
     return 1
