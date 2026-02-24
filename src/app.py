@@ -128,20 +128,42 @@ def search_records(
     warning: str | None = None,
     timestamp: float | None = None,
     purchase_price_override: float | None = None,
+    condition: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    keywords: Sequence[str] = (),
 ) -> list[dict[str, object]]:
     """Filter records by query, evaluate ROI paths, and return ranked output rows."""
     query_lower = query.lower().strip()
+    condition_filter = condition.strip().lower() if condition else None
+    keyword_filters = tuple(keyword.strip().lower() for keyword in keywords if keyword.strip())
     candidates: list[ListingCandidate] = []
 
     for index, record in enumerate(records):
         title = str(record.get("title", ""))
-        if query_lower and query_lower not in title.lower():
+        title_lower = title.lower()
+        if query_lower and query_lower not in title_lower:
             continue
 
         try:
-            candidates.append(_candidate_from_record(record, index, purchase_price_override))
+            candidate = _candidate_from_record(record, index, purchase_price_override)
         except ValueError:
             continue
+
+        if condition_filter:
+            record_condition = str(record.get("condition_raw", record.get("condition")) or "").lower()
+            if condition_filter not in record_condition:
+                continue
+
+        if min_price is not None and candidate.purchase_price < min_price:
+            continue
+        if max_price is not None and candidate.purchase_price > max_price:
+            continue
+
+        if keyword_filters and not all(keyword in title_lower for keyword in keyword_filters):
+            continue
+
+        candidates.append(candidate)
 
     ranked = rank_listings(candidates)
     return [
@@ -602,6 +624,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 query=args.query,
                 records=_load_records(args.input),
                 purchase_price_override=args.purchase_price_override,
+                condition=args.condition,
+                min_price=args.min_price,
+                max_price=args.max_price,
+                keywords=tuple(args.keywords),
             )
         if args.output:
             save_results(args.output, rows)

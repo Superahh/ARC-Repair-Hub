@@ -702,3 +702,55 @@ def test_main_search_missing_shipping_sets_risk_tag(tmp_path, capsys):
     assert payload[0]["shipping"] == 0.0
     assert payload[0]["risk_score"] == 10
     assert payload[0]["reason_tags"] == ["shipping_missing"]
+
+
+def test_main_search_local_input_applies_optional_filters(tmp_path, capsys):
+    input_path = tmp_path / "listings.json"
+    input_rows = [
+        {
+            "title": "MacBook Pro A1990 battery used",
+            "item_id": "flt-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "Used",
+        },
+        {
+            "title": "MacBook Pro A1990 logic board used",
+            "item_id": "flt-2",
+            "price": 220,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "Used",
+        },
+        {
+            "title": "MacBook Pro A1990 battery for parts",
+            "item_id": "flt-3",
+            "price": 190,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "For parts",
+        },
+    ]
+    input_path.write_text(json.dumps(input_rows), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--input",
+            str(input_path),
+            "--condition",
+            "used",
+            "--min-price",
+            "150",
+            "--max-price",
+            "210",
+            "--keyword",
+            "battery",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert [row["item_id"] for row in payload] == ["flt-1"]
