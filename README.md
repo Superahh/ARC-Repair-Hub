@@ -45,6 +45,15 @@ export EBAY_CLIENT_SECRET="..."
   --storage-path data/raw_results.json
 ```
 
+Or put credentials in `.env` (auto-loaded by CLI):
+
+```bash
+cat > .env <<'ENV'
+EBAY_CLIENT_ID=your_client_id
+EBAY_CLIENT_SECRET=your_client_secret
+ENV
+```
+
 Run a one-call auth/search smoke diagnostic:
 
 ```bash
@@ -57,6 +66,7 @@ Optional:
 - `--now-epoch <float>` to fix clock values for deterministic cache tests
 - `--condition`, `--min-price`, `--max-price`, `--keyword`
 - `--ebay-sandbox` (when `--use-ebay-api`)
+- `--env-file <path>` to load env vars from a custom file
 
 ## Test
 

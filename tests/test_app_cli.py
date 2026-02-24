@@ -1,4 +1,5 @@
 import json
+import os
 
 from src.app import main, search_records
 from src.ebay_client import ListingRecord
@@ -168,6 +169,7 @@ def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
             ]
 
     fake_client = _FakeRealClient()
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
     monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: fake_client)
 
     exit_code = main(
@@ -204,6 +206,7 @@ def test_main_ebay_smoke_success(monkeypatch, capsys):
                 )
             ]
 
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
     monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: _FakeRealClient())
 
     exit_code = main(["ebay-smoke", "--query", "A1990"])
@@ -222,6 +225,7 @@ def test_main_ebay_smoke_failure(monkeypatch, capsys):
         def search(self, request):
             raise RuntimeError("boom")
 
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
     monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: _BrokenClient())
 
     exit_code = main(["ebay-smoke"])
@@ -232,3 +236,107 @@ def test_main_ebay_smoke_failure(monkeypatch, capsys):
     assert payload["query"] == "A1990"
     assert payload["result_count"] == 0
     assert "RuntimeError: boom" in payload["error"]
+
+
+def test_main_search_use_ebay_api_loads_env_file(monkeypatch, tmp_path, capsys):
+    env_path = tmp_path / ".env"
+    env_path.write_text("EBAY_ACCESS_TOKEN=from_env_file\n", encoding="utf-8")
+    monkeypatch.delenv("EBAY_ACCESS_TOKEN", raising=False)
+
+    class _FakeRealClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="env-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    fake_client = _FakeRealClient()
+
+    def fake_from_env(sandbox=False):
+        assert sandbox is False
+        assert os.getenv("EBAY_ACCESS_TOKEN") == "from_env_file"
+        return fake_client
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", fake_from_env)
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--env-file",
+            str(env_path),
+            "--cache-path",
+            str(tmp_path / "cache.json"),
+            "--storage-path",
+            str(tmp_path / "raw.json"),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert fake_client.calls == 1
+    assert payload[0]["item_id"] == "env-1"
+
+
+def test_main_search_use_ebay_api_missing_credentials_fails_preflight(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("EBAY_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_SECRET", raising=False)
+
+    def should_not_be_called(*args, **kwargs):
+        raise AssertionError("RealEbayClient.from_env should not be called when preflight fails")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", should_not_be_called)
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--env-file",
+            str(tmp_path / "missing.env"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["command"] == "search"
+    assert payload["auth_mode"] == "unknown"
+    assert "Missing eBay credentials" in payload["error"]
+
+
+def test_main_ebay_smoke_missing_credentials_fails_preflight(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("EBAY_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_SECRET", raising=False)
+
+    def should_not_be_called(*args, **kwargs):
+        raise AssertionError("RealEbayClient.from_env should not be called when preflight fails")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", should_not_be_called)
+
+    exit_code = main(
+        [
+            "ebay-smoke",
+            "--env-file",
+            str(tmp_path / "missing.env"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["auth_mode"] == "unknown"
+    assert "Missing eBay credentials" in payload["error"]

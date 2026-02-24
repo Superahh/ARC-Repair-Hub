@@ -25,6 +25,8 @@ from src.roi import ROIResult, compare_whole_vs_parts
 from src.search_service import search_and_store
 from src.storage import dedupe_key_for_listing, save_results
 
+DEFAULT_ENV_FILE_PATH = ".env"
+
 
 @dataclass(frozen=True)
 class ListingCandidate:
@@ -324,6 +326,61 @@ def _detect_ebay_auth_mode() -> str:
     return "unknown"
 
 
+def load_env_file(path: str | Path = DEFAULT_ENV_FILE_PATH, override: bool = False) -> dict[str, str]:
+    """Load KEY=VALUE pairs from a .env-style file into os.environ."""
+    env_path = Path(path)
+    if not env_path.exists():
+        return {}
+
+    loaded: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        if not override and key in os.environ:
+            continue
+
+        os.environ[key] = value
+        loaded[key] = value
+
+    return loaded
+
+
+def validate_ebay_credentials() -> str | None:
+    """Return an actionable preflight error if eBay auth configuration is missing."""
+    if os.getenv("EBAY_ACCESS_TOKEN", "").strip():
+        return None
+
+    missing: list[str] = []
+    if not os.getenv("EBAY_CLIENT_ID", "").strip():
+        missing.append("EBAY_CLIENT_ID")
+    if not os.getenv("EBAY_CLIENT_SECRET", "").strip():
+        missing.append("EBAY_CLIENT_SECRET")
+
+    if not missing:
+        return None
+
+    joined = ", ".join(missing)
+    return (
+        "Missing eBay credentials. Set EBAY_ACCESS_TOKEN or both EBAY_CLIENT_ID "
+        f"and EBAY_CLIENT_SECRET. Missing: {joined}."
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reseller Radar local search evaluator")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -381,6 +438,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Optional keyword filter; repeat flag for multiple keywords",
     )
+    search_parser.add_argument(
+        "--env-file",
+        default=DEFAULT_ENV_FILE_PATH,
+        help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
+    )
     smoke_parser = subparsers.add_parser("ebay-smoke", help="Run one eBay auth/search smoke check")
     smoke_parser.add_argument("--query", default="A1990", help="Smoke query (default: A1990)")
     smoke_parser.add_argument(
@@ -398,11 +460,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Optional keyword filter; repeat flag for multiple keywords",
     )
+    smoke_parser.add_argument(
+        "--env-file",
+        default=DEFAULT_ENV_FILE_PATH,
+        help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
+    )
 
     args = parser.parse_args(argv)
+    load_env_file(args.env_file)
 
     if args.command == "search":
         if args.use_ebay_api:
+            preflight_error = validate_ebay_credentials()
+            if preflight_error:
+                payload = {
+                    "ok": False,
+                    "command": "search",
+                    "query": args.query,
+                    "auth_mode": _detect_ebay_auth_mode(),
+                    "error": preflight_error,
+                }
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return 1
+
             run = search_and_store(
                 client=RealEbayClient.from_env(sandbox=args.ebay_sandbox),
                 cache=FileSearchCache(args.cache_path),
@@ -448,6 +528,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "ebay-smoke":
+        preflight_error = validate_ebay_credentials()
+        if preflight_error:
+            payload = {
+                "ok": False,
+                "query": args.query,
+                "sandbox": args.ebay_sandbox,
+                "auth_mode": _detect_ebay_auth_mode(),
+                "result_count": 0,
+                "sample_item_id": None,
+                "sample_title": None,
+                "error": preflight_error,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 1
+
         payload, exit_code = run_ebay_smoke(
             query=args.query,
             sandbox=args.ebay_sandbox,
