@@ -397,7 +397,36 @@ def validate_purchase_price_override(value: float | None) -> str | None:
     return None
 
 
+def has_ebay_credentials() -> bool:
+    return _detect_ebay_auth_mode() != "unknown"
+
+
+def _resolve_search_mode(
+    use_ebay_api: bool,
+    market_data_path: str | None,
+    input_explicit: bool,
+    credentials_available: bool,
+) -> Literal["live", "market", "local"]:
+    if market_data_path:
+        return "market"
+    if use_ebay_api:
+        return "live"
+    if input_explicit:
+        return "local"
+    if credentials_available:
+        return "live"
+    return "local"
+
+
+def _arg_provided(argv: Sequence[str], flag: str) -> bool:
+    for token in argv:
+        if token == flag or token.startswith(f"{flag}="):
+            return True
+    return False
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(description="Reseller Radar local search evaluator")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -488,7 +517,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
     )
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
     load_env_file(args.env_file)
 
     if args.command == "search":
@@ -503,7 +532,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
             return 1
 
-        if args.use_ebay_api:
+        search_mode = _resolve_search_mode(
+            use_ebay_api=args.use_ebay_api,
+            market_data_path=args.market_data,
+            input_explicit=_arg_provided(argv_list, "--input"),
+            credentials_available=has_ebay_credentials(),
+        )
+
+        if search_mode == "live":
             preflight_error = validate_ebay_credentials()
             if preflight_error:
                 payload = {
@@ -535,7 +571,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timestamp=run.fetched_at_epoch,
                 purchase_price_override=args.purchase_price_override,
             )
-        elif args.market_data:
+        elif search_mode == "market":
             run = search_and_store(
                 client=StubEbayClient(_load_listing_records(args.market_data)),
                 cache=FileSearchCache(args.cache_path),

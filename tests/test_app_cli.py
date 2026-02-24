@@ -1,8 +1,23 @@
 import json
 import os
 
+import pytest
+
 from src.app import main, search_records
 from src.ebay_client import ListingRecord
+
+
+@pytest.fixture(autouse=True)
+def _clear_ebay_env(monkeypatch):
+    for key in (
+        "EBAY_ACCESS_TOKEN",
+        "EBAY_CLIENT_ID",
+        "EBAY_CLIENT_SECRET",
+        "EBAY_SCOPE",
+        "EBAY_USE_SANDBOX",
+        "EBAY_MARKETPLACE_ID",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_search_records_filters_query_and_ranks_results():
@@ -192,6 +207,124 @@ def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
     assert fake_client.calls == 1
     assert payload[0]["item_id"] == "live-1"
     assert payload[0]["source"] == "fresh"
+
+
+def test_main_search_auto_uses_ebay_when_credentials_present(monkeypatch, tmp_path, capsys):
+    class _FakeRealClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="auto-live-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    fake_client = _FakeRealClient()
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: fake_client)
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--cache-path",
+            str(tmp_path / "cache.json"),
+            "--storage-path",
+            str(tmp_path / "raw.json"),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert fake_client.calls == 1
+    assert payload[0]["item_id"] == "auto-live-1"
+    assert payload[0]["source"] == "fresh"
+
+
+def test_main_search_explicit_input_overrides_auto_live(monkeypatch, tmp_path, capsys):
+    input_path = tmp_path / "local.json"
+    input_path.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "MacBook Pro A1990 local",
+                    "item_id": "local-1",
+                    "price": 200,
+                    "sale_price_whole": 420,
+                    "sale_price_parts": 390,
+                    "condition": "Used",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+
+    def should_not_be_called(*args, **kwargs):
+        raise AssertionError("RealEbayClient.from_env should not be called for explicit --input")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", should_not_be_called)
+
+    exit_code = main(["search", "A1990", "--input", str(input_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload[0]["item_id"] == "local-1"
+    assert payload[0]["source"] == "local"
+
+
+def test_main_search_market_data_overrides_auto_live(monkeypatch, tmp_path, capsys):
+    market_path = tmp_path / "market.json"
+    market_path.write_text(
+        json.dumps(
+            [
+                {
+                    "title": "MacBook Pro A1990 market",
+                    "item_id": "market-1",
+                    "price": 200,
+                    "sale_price_whole": 420,
+                    "sale_price_parts": 390,
+                    "condition_raw": "Used",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+
+    def should_not_be_called(*args, **kwargs):
+        raise AssertionError("RealEbayClient.from_env should not be called for --market-data")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", should_not_be_called)
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--market-data",
+            str(market_path),
+            "--cache-path",
+            str(tmp_path / "cache.json"),
+            "--storage-path",
+            str(tmp_path / "raw.json"),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload[0]["item_id"] == "market-1"
 
 
 def test_main_ebay_smoke_success(monkeypatch, capsys):
