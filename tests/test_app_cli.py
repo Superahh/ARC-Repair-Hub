@@ -340,3 +340,97 @@ def test_main_ebay_smoke_missing_credentials_fails_preflight(monkeypatch, tmp_pa
     assert payload["ok"] is False
     assert payload["auth_mode"] == "unknown"
     assert "Missing eBay credentials" in payload["error"]
+
+
+def test_main_search_use_ebay_api_falls_back_to_cache_on_failure(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+
+    class _HealthyClient:
+        def search(self, request):
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="cache-1",
+                    price=200.0,
+                    shipping=20.0,
+                    condition_raw="Used",
+                    sale_price_whole=420.0,
+                    sale_price_parts=500.0,
+                )
+            ]
+
+    class _BrokenClient:
+        def search(self, request):
+            raise RuntimeError("api down")
+
+    clients = [_HealthyClient(), _BrokenClient()]
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: clients.pop(0))
+
+    cache_path = tmp_path / "cache.json"
+    storage_path = tmp_path / "raw.json"
+
+    first_exit = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    first_payload = json.loads(capsys.readouterr().out)
+
+    second_exit = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "2000",
+        ]
+    )
+    second_payload = json.loads(capsys.readouterr().out)
+
+    assert first_exit == 0
+    assert second_exit == 0
+    assert first_payload[0]["source"] == "fresh"
+    assert second_payload[0]["source"] == "cache_fallback"
+    assert second_payload[0]["item_id"] == "cache-1"
+    assert second_payload[0]["warning"] == "api_failed_using_cache:RuntimeError"
+    assert second_payload[0]["timestamp"] == 1000.0
+
+
+def test_main_search_use_ebay_api_no_cache_and_failure_returns_empty(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+
+    class _BrokenClient:
+        def search(self, request):
+            raise RuntimeError("api down")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: _BrokenClient())
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--cache-path",
+            str(tmp_path / "cache.json"),
+            "--storage-path",
+            str(tmp_path / "raw.json"),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload == []
