@@ -69,6 +69,9 @@ def test_search_and_store_uses_cache_when_fresh_and_avoids_extra_call(tmp_path):
     assert second.source == "cache"
     assert len(client.calls) == 1
     assert second.persisted_rows == 1
+    stored = load_results(path)
+    assert len(stored) == 1
+    assert stored[0]["item_id"] == "1"
 
 
 def test_search_and_store_falls_back_to_cached_on_client_failure(tmp_path):
