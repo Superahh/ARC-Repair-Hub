@@ -1,6 +1,7 @@
 import json
 
 from src.app import main, search_records
+from src.ebay_client import ListingRecord
 
 
 def test_search_records_filters_query_and_ranks_results():
@@ -145,3 +146,47 @@ def test_main_search_market_data_mode_uses_file_cache(tmp_path, capsys):
     persisted = json.loads(storage_path.read_text(encoding="utf-8"))
     assert len(persisted) == 1
     assert persisted[0]["item_id"] == "seed-1"
+
+
+def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
+    class _FakeRealClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="live-1",
+                    price=200.0,
+                    shipping=20.0,
+                    condition_raw="Used",
+                    sale_price_whole=420.0,
+                    sale_price_parts=500.0,
+                )
+            ]
+
+    fake_client = _FakeRealClient()
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: fake_client)
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--use-ebay-api",
+            "--cache-path",
+            str(tmp_path / "cache.json"),
+            "--storage-path",
+            str(tmp_path / "raw.json"),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    stdout = capsys.readouterr().out
+    payload = json.loads(stdout)
+
+    assert exit_code == 0
+    assert fake_client.calls == 1
+    assert payload[0]["item_id"] == "live-1"
+    assert payload[0]["source"] == "fresh"

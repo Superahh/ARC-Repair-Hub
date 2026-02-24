@@ -18,7 +18,7 @@ from src.config import (
     DEFAULT_PLATFORM_FEE_RATE,
     DEFAULT_RAW_RESULTS_PATH,
 )
-from src.ebay_client import ListingRecord, StubEbayClient
+from src.ebay_client import ListingRecord, RealEbayClient, StubEbayClient
 from src.normalize import assess_risk, normalize_condition
 from src.roi import ROIResult, compare_whole_vs_parts
 from src.search_service import search_and_store
@@ -305,16 +305,59 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Optional fixed clock for deterministic cache behavior",
     )
+    search_parser.add_argument(
+        "--use-ebay-api",
+        action="store_true",
+        help="Use live eBay Browse API instead of local input/market-data",
+    )
+    search_parser.add_argument(
+        "--ebay-sandbox",
+        action="store_true",
+        help="Use eBay sandbox endpoints when --use-ebay-api is enabled",
+    )
+    search_parser.add_argument("--condition", default=None, help="Optional condition filter")
+    search_parser.add_argument("--min-price", type=float, default=None, help="Optional min purchase price")
+    search_parser.add_argument("--max-price", type=float, default=None, help="Optional max purchase price")
+    search_parser.add_argument(
+        "--keyword",
+        dest="keywords",
+        action="append",
+        default=[],
+        help="Optional keyword filter; repeat flag for multiple keywords",
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "search":
-        if args.market_data:
+        if args.use_ebay_api:
+            run = search_and_store(
+                client=RealEbayClient.from_env(sandbox=args.ebay_sandbox),
+                cache=FileSearchCache(args.cache_path),
+                storage_path=args.storage_path,
+                query=args.query,
+                condition=args.condition,
+                min_price=args.min_price,
+                max_price=args.max_price,
+                keywords=tuple(args.keywords),
+                now_epoch=args.now_epoch,
+            )
+            rows = search_records(
+                query="",
+                records=_listing_records_to_rows(run.records),
+                source=run.source,
+                warning=run.warning,
+                timestamp=run.fetched_at_epoch,
+            )
+        elif args.market_data:
             run = search_and_store(
                 client=StubEbayClient(_load_listing_records(args.market_data)),
                 cache=FileSearchCache(args.cache_path),
                 storage_path=args.storage_path,
                 query=args.query,
+                condition=args.condition,
+                min_price=args.min_price,
+                max_price=args.max_price,
+                keywords=tuple(args.keywords),
                 now_epoch=args.now_epoch,
             )
             rows = search_records(

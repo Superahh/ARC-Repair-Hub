@@ -32,10 +32,25 @@ Evaluate via stub eBay client + persistent cache:
   --storage-path data/raw_results.json
 ```
 
+Evaluate via live eBay Browse API (real adapter):
+
+```bash
+export EBAY_CLIENT_ID="..."
+export EBAY_CLIENT_SECRET="..."
+# optional: export EBAY_USE_SANDBOX=1
+
+.venv/bin/python -m src.app search "A1990" \
+  --use-ebay-api \
+  --cache-path data/search_cache.json \
+  --storage-path data/raw_results.json
+```
+
 Optional:
 
 - `--output <path>` to save evaluated rows
 - `--now-epoch <float>` to fix clock values for deterministic cache tests
+- `--condition`, `--min-price`, `--max-price`, `--keyword`
+- `--ebay-sandbox` (when `--use-ebay-api`)
 
 ## Test
 
