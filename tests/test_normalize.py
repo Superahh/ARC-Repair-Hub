@@ -67,3 +67,18 @@ def test_assess_risk_flags_conflict_messy_title_and_missing_shipping():
         "shipping_missing",
         "listing_data_messy",
     )
+
+
+def test_assess_risk_flags_estimated_sale_prices():
+    condition = normalize_condition(raw_condition="Used", title="MacBook Pro A1990 used")
+    risk = assess_risk(
+        title="MacBook Pro A1990 used",
+        condition=condition,
+        purchase_price=200,
+        sale_price_whole=320,
+        sale_price_parts=370,
+        sale_prices_estimated=True,
+    )
+
+    assert risk.score == 20
+    assert risk.reasons == ("sale_prices_estimated",)

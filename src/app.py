@@ -19,6 +19,7 @@ from src.config import (
     DEFAULT_PLATFORM_FEE_RATE,
     DEFAULT_RAW_RESULTS_PATH,
 )
+from src.estimation import estimate_sale_prices
 from src.ebay_client import ListingRecord, RealEbayClient, SearchRequest, StubEbayClient
 from src.normalize import assess_risk, normalize_condition
 from src.roi import ROIResult, compare_whole_vs_parts
@@ -35,6 +36,7 @@ class ListingCandidate:
     purchase_price: float
     sale_price_whole: float | None
     sale_price_parts: float | None
+    sale_prices_estimated: bool = False
     condition_raw: str | None = None
     shipping_cost: float = 0.0
     shipping_missing: bool = False
@@ -72,6 +74,7 @@ def evaluate_listing(
         purchase_price=listing.purchase_price,
         sale_price_whole=listing.sale_price_whole,
         sale_price_parts=listing.sale_price_parts,
+        sale_prices_estimated=listing.sale_prices_estimated,
         shipping_missing=listing.shipping_missing,
     )
     comparison = compare_whole_vs_parts(
@@ -195,6 +198,20 @@ def _candidate_from_record(
     if purchase_price is None:
         raise ValueError("record missing purchase_price/price")
 
+    condition_raw = _to_optional_str(record.get("condition_raw", record.get("condition")))
+    sale_price_whole = _to_float(record.get("sale_price_whole"), default=None)
+    sale_price_parts = _to_float(record.get("sale_price_parts"), default=None)
+    sale_prices_estimated = False
+    if sale_price_whole is None or sale_price_parts is None:
+        estimated_whole, estimated_parts = estimate_sale_prices(
+            purchase_price=purchase_price,
+            condition_raw=condition_raw,
+            title=title,
+        )
+        sale_price_whole = estimated_whole if sale_price_whole is None else sale_price_whole
+        sale_price_parts = estimated_parts if sale_price_parts is None else sale_price_parts
+        sale_prices_estimated = True
+
     shipping_raw = record.get("shipping_cost", record.get("shipping"))
     shipping_missing = shipping_raw is None
 
@@ -202,9 +219,10 @@ def _candidate_from_record(
         title=title,
         item_id=item_id,
         purchase_price=purchase_price,
-        sale_price_whole=_to_float(record.get("sale_price_whole"), default=None),
-        sale_price_parts=_to_float(record.get("sale_price_parts"), default=None),
-        condition_raw=_to_optional_str(record.get("condition_raw", record.get("condition"))),
+        sale_price_whole=sale_price_whole,
+        sale_price_parts=sale_price_parts,
+        sale_prices_estimated=sale_prices_estimated,
+        condition_raw=condition_raw,
         shipping_cost=_to_float(shipping_raw, default=0.0) or 0.0,
         shipping_missing=shipping_missing,
         extra_costs=_to_float(record.get("extra_costs"), default=0.0) or 0.0,

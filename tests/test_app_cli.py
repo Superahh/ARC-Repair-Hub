@@ -270,6 +270,7 @@ def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
     assert fake_client.calls == 1
     assert payload[0]["item_id"] == "live-1"
     assert payload[0]["source"] == "fresh"
+    assert payload[0]["ROI_best"]["reason"] == "ok"
 
 
 def test_main_search_auto_uses_ebay_when_credentials_present(monkeypatch, tmp_path, capsys):
@@ -310,6 +311,9 @@ def test_main_search_auto_uses_ebay_when_credentials_present(monkeypatch, tmp_pa
     assert fake_client.calls == 1
     assert payload[0]["item_id"] == "auto-live-1"
     assert payload[0]["source"] == "fresh"
+    assert payload[0]["ROI_best"]["reason"] == "ok"
+    assert payload[0]["ROI_best"]["sale_price"] is not None
+    assert "sale_prices_estimated" in payload[0]["reason_tags"]
 
 
 def test_main_search_explicit_input_overrides_auto_live(monkeypatch, tmp_path, capsys):

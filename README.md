@@ -61,6 +61,8 @@ Run a one-call auth/search smoke diagnostic:
 .venv/bin/python -m src.app ebay-smoke --query "A1990"
 ```
 
+When `sale_price_whole` / `sale_price_parts` are missing, the app applies deterministic fallback estimates and adds the `sale_prices_estimated` risk tag.
+
 Optional:
 
 - `--output <path>` to save evaluated rows

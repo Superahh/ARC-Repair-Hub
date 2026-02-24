@@ -73,6 +73,7 @@ def assess_risk(
     purchase_price: float,
     sale_price_whole: float | None,
     sale_price_parts: float | None,
+    sale_prices_estimated: bool = False,
     shipping_missing: bool = False,
 ) -> RiskAssessment:
     """Compute a deterministic risk score (0-100) and reason tags."""
@@ -97,6 +98,10 @@ def assess_risk(
     if shipping_missing:
         score += 10
         reasons.append("shipping_missing")
+
+    if sale_prices_estimated:
+        score += 20
+        reasons.append("sale_prices_estimated")
 
     if any(
         pattern in title_lower
