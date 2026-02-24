@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 DEFAULT_EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope/buy.browse"
 DEFAULT_EBAY_MARKETPLACE_ID = "EBAY_US"
 DEFAULT_EBAY_TIMEOUT_SECONDS = 10.0
+DEFAULT_EBAY_MAX_RETRIES = 1
 
 _TOKEN_URL_PROD = "https://api.ebay.com/identity/v1/oauth2/token"
 _TOKEN_URL_SANDBOX = "https://api.sandbox.ebay.com/identity/v1/oauth2/token"
@@ -118,6 +119,19 @@ class EbayAuthError(RuntimeError):
 class EbayAPIError(RuntimeError):
     """Raised when eBay browse API requests fail."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after_seconds: float | None = None,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
+        self.retryable = retryable
+
 
 @dataclass(frozen=True)
 class StaticAccessTokenProvider:
@@ -197,11 +211,15 @@ class RealEbayClient:
         marketplace_id: str = DEFAULT_EBAY_MARKETPLACE_ID,
         sandbox: bool = False,
         timeout_seconds: float = DEFAULT_EBAY_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_EBAY_MAX_RETRIES,
+        sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
         self._token_provider = token_provider
         self._marketplace_id = marketplace_id.strip() or DEFAULT_EBAY_MARKETPLACE_ID
         self._sandbox = sandbox
         self._timeout_seconds = timeout_seconds
+        self._max_retries = max(0, int(max_retries))
+        self._sleep_fn = sleep_fn or _default_sleep
 
     @classmethod
     def from_env(
@@ -210,9 +228,14 @@ class RealEbayClient:
         sandbox: bool | None = None,
         marketplace_id: str | None = None,
         timeout_seconds: float = DEFAULT_EBAY_TIMEOUT_SECONDS,
+        max_retries: int | None = None,
     ) -> RealEbayClient:
         resolved_sandbox = _env_truthy("EBAY_USE_SANDBOX") if sandbox is None else sandbox
         resolved_marketplace = marketplace_id or os.getenv("EBAY_MARKETPLACE_ID", DEFAULT_EBAY_MARKETPLACE_ID)
+        resolved_retries = max_retries
+        if resolved_retries is None:
+            raw = os.getenv("EBAY_MAX_RETRIES", "").strip()
+            resolved_retries = int(raw) if raw else DEFAULT_EBAY_MAX_RETRIES
 
         static_token = os.getenv("EBAY_ACCESS_TOKEN", "").strip()
         if static_token:
@@ -238,28 +261,23 @@ class RealEbayClient:
             marketplace_id=resolved_marketplace,
             sandbox=resolved_sandbox,
             timeout_seconds=timeout_seconds,
+            max_retries=resolved_retries,
         )
 
     def search(self, request: SearchRequest) -> list[ListingRecord]:
         normalized = request.normalized()
-        browse_url = _BROWSE_SEARCH_URL_SANDBOX if self._sandbox else _BROWSE_SEARCH_URL_PROD
+        payload: dict[str, Any] | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                payload = self._search_once(normalized)
+                break
+            except EbayAPIError as exc:
+                if attempt >= self._max_retries or not exc.retryable:
+                    raise
+                delay = _retry_delay_seconds(exc, attempt)
+                self._sleep_fn(delay)
 
-        query_parts = [normalized.query, *normalized.keywords]
-        query_text = " ".join(part for part in query_parts if part).strip()
-        params = {"q": query_text}
-        url = f"{browse_url}?{urlencode(params)}"
-
-        token = self._token_provider.get_access_token()
-        api_request = Request(
-            url,
-            method="GET",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-                "X-EBAY-C-MARKETPLACE-ID": self._marketplace_id,
-            },
-        )
-        payload = _request_json(request=api_request, timeout_seconds=self._timeout_seconds, error_cls=EbayAPIError)
+        assert payload is not None
         item_summaries = payload.get("itemSummaries", [])
         if not isinstance(item_summaries, list):
             raise EbayAPIError("Unexpected eBay response: itemSummaries is not a list")
@@ -275,6 +293,25 @@ class RealEbayClient:
 
         filtered = _filter_records(mapped, normalized)
         return sorted(filtered, key=lambda item: (item.item_id, item.title))
+
+    def _search_once(self, normalized: SearchRequest) -> dict[str, Any]:
+        browse_url = _BROWSE_SEARCH_URL_SANDBOX if self._sandbox else _BROWSE_SEARCH_URL_PROD
+        query_parts = [normalized.query, *normalized.keywords]
+        query_text = " ".join(part for part in query_parts if part).strip()
+        params = {"q": query_text}
+        url = f"{browse_url}?{urlencode(params)}"
+
+        token = self._token_provider.get_access_token()
+        api_request = Request(
+            url,
+            method="GET",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "X-EBAY-C-MARKETPLACE-ID": self._marketplace_id,
+            },
+        )
+        return _request_json(request=api_request, timeout_seconds=self._timeout_seconds, error_cls=EbayAPIError)
 
 
 def _listing_record_from_item(item: dict[str, Any]) -> ListingRecord | None:
@@ -359,9 +396,21 @@ def _request_json(request: Request, timeout_seconds: float, error_cls: type[Runt
             raw = response.read().decode("utf-8")
     except HTTPError as exc:
         body = _extract_http_error_body(exc)
-        raise error_cls(f"HTTP {exc.code} from {request.full_url}: {body}") from exc
+        message = f"HTTP {exc.code} from {request.full_url}: {body}"
+        if error_cls is EbayAPIError:
+            retry_after = _parse_retry_after(exc.headers.get("Retry-After")) if exc.headers else None
+            raise EbayAPIError(
+                message,
+                status_code=exc.code,
+                retry_after_seconds=retry_after,
+                retryable=_is_retryable_status(exc.code),
+            ) from exc
+        raise error_cls(message) from exc
     except URLError as exc:
-        raise error_cls(f"Network error calling {request.full_url}: {exc.reason}") from exc
+        message = f"Network error calling {request.full_url}: {exc.reason}"
+        if error_cls is EbayAPIError:
+            raise EbayAPIError(message, retryable=True) from exc
+        raise error_cls(message) from exc
 
     try:
         payload = json.loads(raw)
@@ -392,6 +441,36 @@ def _default_now_epoch() -> float:
     import time
 
     return time.time()
+
+
+def _default_sleep(seconds: float) -> None:
+    import time
+
+    time.sleep(max(seconds, 0.0))
+
+
+def _retry_delay_seconds(error: EbayAPIError, attempt: int) -> float:
+    if error.retry_after_seconds is not None and error.retry_after_seconds > 0:
+        return error.retry_after_seconds
+    # exponential backoff: 1s, 2s, 4s...
+    return float(2**attempt)
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {429, 500, 502, 503, 504}
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        parsed = float(text)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
 
 
 class EbayClientNotConfigured:

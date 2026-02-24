@@ -38,6 +38,7 @@ Evaluate via live eBay Browse API (real adapter):
 export EBAY_CLIENT_ID="..."
 export EBAY_CLIENT_SECRET="..."
 # optional: export EBAY_USE_SANDBOX=1
+# optional: export EBAY_MAX_RETRIES=1
 
 .venv/bin/python -m src.app search "A1990" \
   --use-ebay-api \

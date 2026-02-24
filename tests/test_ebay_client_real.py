@@ -1,5 +1,6 @@
 import io
 import json
+from email.message import Message
 from urllib.error import HTTPError
 
 import pytest
@@ -130,3 +131,73 @@ def test_real_client_from_env_prefers_static_token(monkeypatch):
     results = client.search(SearchRequest(query="A1990"))
 
     assert results == []
+
+
+def test_real_client_retries_on_429_then_succeeds(monkeypatch):
+    calls = {"count": 0}
+    sleep_calls: list[float] = []
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            headers = Message()
+            headers["Retry-After"] = "1"
+            raise HTTPError(
+                url=request.full_url,
+                code=429,
+                msg="Too Many Requests",
+                hdrs=headers,
+                fp=io.BytesIO(b"{\"error\":\"rate_limited\"}"),
+            )
+        return _FakeResponse(
+            {
+                "itemSummaries": [
+                    {
+                        "itemId": "1",
+                        "title": "MacBook Pro A1990 battery used",
+                        "price": {"value": "180"},
+                        "condition": "Used",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("src.ebay_client.urlopen", fake_urlopen)
+    client = RealEbayClient(
+        token_provider=StaticAccessTokenProvider("static-token"),
+        max_retries=1,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+    results = client.search(SearchRequest(query="A1990", keywords=("battery",)))
+
+    assert [item.item_id for item in results] == ["1"]
+    assert calls["count"] == 2
+    assert sleep_calls == [1.0]
+
+
+def test_real_client_raises_after_retry_exhausted(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        raise HTTPError(
+            url=request.full_url,
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=io.BytesIO(b"{\"error\":\"service_unavailable\"}"),
+        )
+
+    monkeypatch.setattr("src.ebay_client.urlopen", fake_urlopen)
+    client = RealEbayClient(
+        token_provider=StaticAccessTokenProvider("static-token"),
+        max_retries=1,
+        sleep_fn=lambda seconds: None,
+    )
+
+    with pytest.raises(EbayAPIError) as exc_info:
+        client.search(SearchRequest(query="A1990"))
+
+    assert calls["count"] == 2
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.retryable is True
