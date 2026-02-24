@@ -8,9 +8,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from src.config import DEFAULT_CACHE_TTL_SECONDS
 from src.ebay_client import EbayClient, ListingRecord, SearchRequest
-
-DEFAULT_CACHE_TTL_SECONDS = 900
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from src.config import DEFAULT_FIXED_FEE, DEFAULT_PAYMENT_FEE_RATE, DEFAULT_PLATFORM_FEE_RATE
+
 
 @dataclass(frozen=True)
 class ROIResult:
@@ -26,9 +28,9 @@ class CompareResult:
 
 def net_revenue(
     sale_price: float,
-    platform_fee_rate: float = 0.13,
-    payment_fee_rate: float = 0.03,
-    fixed_fee: float = 0.30,
+    platform_fee_rate: float = DEFAULT_PLATFORM_FEE_RATE,
+    payment_fee_rate: float = DEFAULT_PAYMENT_FEE_RATE,
+    fixed_fee: float = DEFAULT_FIXED_FEE,
 ) -> float:
     """Compute post-fee revenue from a sale price."""
     fee_rate = platform_fee_rate + payment_fee_rate
@@ -40,9 +42,9 @@ def compute_roi(
     sale_price: float | None,
     shipping_cost: float = 0.0,
     extra_costs: float = 0.0,
-    platform_fee_rate: float = 0.13,
-    payment_fee_rate: float = 0.03,
-    fixed_fee: float = 0.30,
+    platform_fee_rate: float = DEFAULT_PLATFORM_FEE_RATE,
+    payment_fee_rate: float = DEFAULT_PAYMENT_FEE_RATE,
+    fixed_fee: float = DEFAULT_FIXED_FEE,
 ) -> ROIResult:
     """Compute ROI for one sale estimate path."""
     if purchase_price <= 0:
@@ -85,9 +87,9 @@ def compare_whole_vs_parts(
     sale_price_parts: float | None,
     shipping_cost: float = 0.0,
     extra_costs: float = 0.0,
-    platform_fee_rate: float = 0.13,
-    payment_fee_rate: float = 0.03,
-    fixed_fee: float = 0.30,
+    platform_fee_rate: float = DEFAULT_PLATFORM_FEE_RATE,
+    payment_fee_rate: float = DEFAULT_PAYMENT_FEE_RATE,
+    fixed_fee: float = DEFAULT_FIXED_FEE,
 ) -> CompareResult:
     """Compare whole-unit resale against part-out and choose the best path."""
     whole = compute_roi(

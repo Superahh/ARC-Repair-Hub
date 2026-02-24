@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Literal, Sequence
 
 from src.cache import FileSearchCache
+from src.config import (
+    DEFAULT_CACHE_PATH,
+    DEFAULT_FIXED_FEE,
+    DEFAULT_LISTINGS_INPUT_PATH,
+    DEFAULT_PAYMENT_FEE_RATE,
+    DEFAULT_PLATFORM_FEE_RATE,
+    DEFAULT_RAW_RESULTS_PATH,
+)
 from src.ebay_client import ListingRecord, StubEbayClient
 from src.normalize import assess_risk, normalize_condition
 from src.roi import ROIResult, compare_whole_vs_parts
@@ -48,9 +56,9 @@ class EvaluatedListing:
 
 def evaluate_listing(
     listing: ListingCandidate,
-    platform_fee_rate: float = 0.13,
-    payment_fee_rate: float = 0.03,
-    fixed_fee: float = 0.30,
+    platform_fee_rate: float = DEFAULT_PLATFORM_FEE_RATE,
+    payment_fee_rate: float = DEFAULT_PAYMENT_FEE_RATE,
+    fixed_fee: float = DEFAULT_FIXED_FEE,
 ) -> EvaluatedListing:
     """Evaluate one listing against whole-unit and part-out resale paths."""
     condition = normalize_condition(raw_condition=listing.condition_raw, title=listing.title)
@@ -91,9 +99,9 @@ def evaluate_listing(
 
 def rank_listings(
     listings: Sequence[ListingCandidate],
-    platform_fee_rate: float = 0.13,
-    payment_fee_rate: float = 0.03,
-    fixed_fee: float = 0.30,
+    platform_fee_rate: float = DEFAULT_PLATFORM_FEE_RATE,
+    payment_fee_rate: float = DEFAULT_PAYMENT_FEE_RATE,
+    fixed_fee: float = DEFAULT_FIXED_FEE,
 ) -> list[EvaluatedListing]:
     """Evaluate and rank listings by best computable ROI opportunity."""
     evaluated = [
@@ -263,8 +271,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     search_parser.add_argument("query", help="Search text to match against listing title")
     search_parser.add_argument(
         "--input",
-        default="data/listings.json",
-        help="Path to local JSON listings file (default: data/listings.json)",
+        default=DEFAULT_LISTINGS_INPUT_PATH,
+        help=f"Path to local JSON listings file (default: {DEFAULT_LISTINGS_INPUT_PATH})",
     )
     search_parser.add_argument(
         "--output",
@@ -278,12 +286,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     search_parser.add_argument(
         "--cache-path",
-        default="data/search_cache.json",
+        default=DEFAULT_CACHE_PATH,
         help="Cache file path for eBay search caching",
     )
     search_parser.add_argument(
         "--storage-path",
-        default="data/raw_results.json",
+        default=DEFAULT_RAW_RESULTS_PATH,
         help="Storage file path for raw searched rows",
     )
     search_parser.add_argument(
