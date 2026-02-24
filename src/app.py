@@ -125,6 +125,7 @@ def search_records(
     source: str = "local",
     warning: str | None = None,
     timestamp: float | None = None,
+    purchase_price_override: float | None = None,
 ) -> list[dict[str, object]]:
     """Filter records by query, evaluate ROI paths, and return ranked output rows."""
     query_lower = query.lower().strip()
@@ -136,7 +137,7 @@ def search_records(
             continue
 
         try:
-            candidates.append(_candidate_from_record(record, index))
+            candidates.append(_candidate_from_record(record, index, purchase_price_override))
         except ValueError:
             continue
 
@@ -156,10 +157,17 @@ def _sort_key(listing: EvaluatedListing) -> tuple[int, float, float, str]:
     return (0, -best.profit, -roi, listing.item_id)
 
 
-def _candidate_from_record(record: dict[str, object], index: int) -> ListingCandidate:
+def _candidate_from_record(
+    record: dict[str, object],
+    index: int,
+    purchase_price_override: float | None = None,
+) -> ListingCandidate:
     title = str(record.get("title", ""))
     item_id = str(record.get("item_id") or record.get("id") or record.get("url") or f"row-{index}")
-    purchase_price = _to_float(record.get("purchase_price", record.get("price")), default=None)
+    if purchase_price_override is not None:
+        purchase_price = purchase_price_override
+    else:
+        purchase_price = _to_float(record.get("purchase_price", record.get("price")), default=None)
     if purchase_price is None:
         raise ValueError("record missing purchase_price/price")
 
@@ -381,6 +389,14 @@ def validate_ebay_credentials() -> str | None:
     )
 
 
+def validate_purchase_price_override(value: float | None) -> str | None:
+    if value is None:
+        return None
+    if value <= 0:
+        return "purchase_price_override must be greater than 0."
+    return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reseller Radar local search evaluator")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -439,6 +455,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Optional keyword filter; repeat flag for multiple keywords",
     )
     search_parser.add_argument(
+        "--purchase-price-override",
+        type=float,
+        default=None,
+        help="Optional override purchase price applied to all evaluated listings",
+    )
+    search_parser.add_argument(
         "--env-file",
         default=DEFAULT_ENV_FILE_PATH,
         help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
@@ -470,6 +492,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_env_file(args.env_file)
 
     if args.command == "search":
+        override_error = validate_purchase_price_override(args.purchase_price_override)
+        if override_error:
+            payload = {
+                "ok": False,
+                "command": "search",
+                "query": args.query,
+                "error": override_error,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 1
+
         if args.use_ebay_api:
             preflight_error = validate_ebay_credentials()
             if preflight_error:
@@ -500,6 +533,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source=run.source,
                 warning=run.warning,
                 timestamp=run.fetched_at_epoch,
+                purchase_price_override=args.purchase_price_override,
             )
         elif args.market_data:
             run = search_and_store(
@@ -519,9 +553,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source=run.source,
                 warning=run.warning,
                 timestamp=run.fetched_at_epoch,
+                purchase_price_override=args.purchase_price_override,
             )
         else:
-            rows = search_records(query=args.query, records=_load_records(args.input))
+            rows = search_records(
+                query=args.query,
+                records=_load_records(args.input),
+                purchase_price_override=args.purchase_price_override,
+            )
         if args.output:
             save_results(args.output, rows)
         print(json.dumps(rows, indent=2, sort_keys=True))

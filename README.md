@@ -67,6 +67,7 @@ Optional:
 - `--condition`, `--min-price`, `--max-price`, `--keyword`
 - `--ebay-sandbox` (when `--use-ebay-api`)
 - `--env-file <path>` to load env vars from a custom file
+- `--purchase-price-override <float>` to force a single buy price for ROI evaluation
 
 ## Test
 

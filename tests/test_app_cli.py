@@ -434,3 +434,52 @@ def test_main_search_use_ebay_api_no_cache_and_failure_returns_empty(monkeypatch
 
     assert exit_code == 0
     assert payload == []
+
+
+def test_main_search_purchase_price_override_applies_to_local_input(tmp_path, capsys):
+    input_path = tmp_path / "listings.json"
+    input_rows = [
+        {
+            "title": "MacBook Pro A1990 used",
+            "item_id": "ovr-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "Used",
+        }
+    ]
+    input_path.write_text(json.dumps(input_rows), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--input",
+            str(input_path),
+            "--purchase-price-override",
+            "300",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload[0]["item_id"] == "ovr-1"
+    assert payload[0]["price"] == 300.0
+    assert payload[0]["ROI_best"]["total_cost"] == 300.0
+
+
+def test_main_search_purchase_price_override_rejects_non_positive(capsys):
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--purchase-price-override",
+            "0",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["command"] == "search"
+    assert "purchase_price_override must be greater than 0" in payload["error"]
