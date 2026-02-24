@@ -44,3 +44,26 @@ def test_assess_risk_detects_divergence_and_outlier():
 
     assert risk.score == 35
     assert risk.reasons == ("path_price_divergence", "price_outlier_high")
+
+
+def test_assess_risk_flags_conflict_messy_title_and_missing_shipping():
+    condition = normalize_condition(
+        raw_condition="Used",
+        title="MacBook Pro A1990 for parts ?? read description",
+    )
+    risk = assess_risk(
+        title="MacBook Pro A1990 for parts ?? read description",
+        condition=condition,
+        purchase_price=200,
+        sale_price_whole=320,
+        sale_price_parts=300,
+        shipping_missing=True,
+    )
+
+    assert risk.score == 75
+    assert risk.reasons == (
+        "condition_ambiguous",
+        "condition_conflict_title_vs_raw",
+        "shipping_missing",
+        "listing_data_messy",
+    )

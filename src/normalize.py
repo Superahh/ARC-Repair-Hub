@@ -73,10 +73,12 @@ def assess_risk(
     purchase_price: float,
     sale_price_whole: float | None,
     sale_price_parts: float | None,
+    shipping_missing: bool = False,
 ) -> RiskAssessment:
     """Compute a deterministic risk score (0-100) and reason tags."""
     score = 0
     reasons: list[str] = []
+    title_lower = title.strip().lower()
 
     if not title.strip():
         score += 10
@@ -88,6 +90,20 @@ def assess_risk(
     if condition.normalized == "ambiguous":
         score += 40
         reasons.append("condition_ambiguous")
+        if "condition_conflict_title_vs_raw" in condition.reasons:
+            score += 10
+            reasons.append("condition_conflict_title_vs_raw")
+
+    if shipping_missing:
+        score += 10
+        reasons.append("shipping_missing")
+
+    if any(
+        pattern in title_lower
+        for pattern in ("read description", "see description", "unknown", "??", "as-is", "as is")
+    ):
+        score += 15
+        reasons.append("listing_data_messy")
 
     if sale_price_whole is None and sale_price_parts is None:
         score += 45

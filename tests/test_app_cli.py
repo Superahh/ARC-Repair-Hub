@@ -679,3 +679,26 @@ def test_main_search_purchase_price_override_rejects_non_positive(capsys):
     assert payload["ok"] is False
     assert payload["command"] == "search"
     assert "purchase_price_override must be greater than 0" in payload["error"]
+
+
+def test_main_search_missing_shipping_sets_risk_tag(tmp_path, capsys):
+    input_path = tmp_path / "listings.json"
+    input_rows = [
+        {
+            "title": "MacBook Pro A1990 used",
+            "item_id": "ship-miss-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "Used",
+        }
+    ]
+    input_path.write_text(json.dumps(input_rows), encoding="utf-8")
+
+    exit_code = main(["search", "A1990", "--input", str(input_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload[0]["shipping"] == 0.0
+    assert payload[0]["risk_score"] == 10
+    assert payload[0]["reason_tags"] == ["shipping_missing"]

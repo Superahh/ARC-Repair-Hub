@@ -37,6 +37,7 @@ class ListingCandidate:
     sale_price_parts: float | None
     condition_raw: str | None = None
     shipping_cost: float = 0.0
+    shipping_missing: bool = False
     extra_costs: float = 0.0
 
 
@@ -71,6 +72,7 @@ def evaluate_listing(
         purchase_price=listing.purchase_price,
         sale_price_whole=listing.sale_price_whole,
         sale_price_parts=listing.sale_price_parts,
+        shipping_missing=listing.shipping_missing,
     )
     comparison = compare_whole_vs_parts(
         purchase_price=listing.purchase_price,
@@ -171,6 +173,9 @@ def _candidate_from_record(
     if purchase_price is None:
         raise ValueError("record missing purchase_price/price")
 
+    shipping_raw = record.get("shipping_cost", record.get("shipping"))
+    shipping_missing = shipping_raw is None
+
     return ListingCandidate(
         title=title,
         item_id=item_id,
@@ -178,7 +183,8 @@ def _candidate_from_record(
         sale_price_whole=_to_float(record.get("sale_price_whole"), default=None),
         sale_price_parts=_to_float(record.get("sale_price_parts"), default=None),
         condition_raw=_to_optional_str(record.get("condition_raw", record.get("condition"))),
-        shipping_cost=_to_float(record.get("shipping_cost", record.get("shipping")), default=0.0) or 0.0,
+        shipping_cost=_to_float(shipping_raw, default=0.0) or 0.0,
+        shipping_missing=shipping_missing,
         extra_costs=_to_float(record.get("extra_costs"), default=0.0) or 0.0,
     )
 
