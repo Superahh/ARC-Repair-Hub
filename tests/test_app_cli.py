@@ -78,3 +78,65 @@ def test_main_search_missing_input_file_returns_empty_json(capsys):
 
     assert exit_code == 0
     assert json.loads(stdout) == []
+
+
+def test_main_search_market_data_mode_uses_file_cache(tmp_path, capsys):
+    market_path = tmp_path / "market.json"
+    cache_path = tmp_path / "cache.json"
+    storage_path = tmp_path / "raw_results.json"
+
+    market_rows = [
+        {
+            "title": "MacBook Pro A1990 used",
+            "item_id": "seed-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition_raw": "Used",
+        }
+    ]
+    market_path.write_text(json.dumps(market_rows), encoding="utf-8")
+
+    first_exit = main(
+        [
+            "search",
+            "A1990",
+            "--market-data",
+            str(market_path),
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    first_stdout = capsys.readouterr().out
+    first_payload = json.loads(first_stdout)
+
+    market_rows[0]["item_id"] = "seed-2"
+    market_path.write_text(json.dumps(market_rows), encoding="utf-8")
+
+    second_exit = main(
+        [
+            "search",
+            "A1990",
+            "--market-data",
+            str(market_path),
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1001",
+        ]
+    )
+    second_stdout = capsys.readouterr().out
+    second_payload = json.loads(second_stdout)
+
+    assert first_exit == 0
+    assert second_exit == 0
+    assert first_payload[0]["source"] == "fresh"
+    assert first_payload[0]["item_id"] == "seed-1"
+    assert second_payload[0]["source"] == "cache"
+    assert second_payload[0]["item_id"] == "seed-1"

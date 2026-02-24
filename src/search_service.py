@@ -34,10 +34,15 @@ def search_and_store(
     min_price: float | None = None,
     max_price: float | None = None,
     keywords: Sequence[str] = (),
-    now_epoch: float = 0.0,
+    now_epoch: float | None = None,
     ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
 ) -> SearchRunResult:
     """Run a listing search with cache-aware and failure-safe behavior."""
+    if now_epoch is None:
+        import time
+
+        now_epoch = time.time()
+
     request = SearchRequest(
         query=query,
         condition=condition,
@@ -93,6 +98,8 @@ def _record_to_storage_row(record: ListingRecord) -> dict[str, object]:
         "shipping": record.shipping if record.shipping is not None else 0.0,
         "condition_raw": record.condition_raw,
         "url": record.url,
+        "sale_price_whole": record.sale_price_whole,
+        "sale_price_parts": record.sale_price_parts,
     }
 
 
@@ -105,4 +112,6 @@ def _record_from_dict(data: dict[str, object]) -> ListingRecord:
         shipping=float(shipping) if shipping is not None else None,
         condition_raw=str(data["condition_raw"]) if data.get("condition_raw") is not None else None,
         url=str(data["url"]) if data.get("url") is not None else None,
+        sale_price_whole=float(data["sale_price_whole"]) if data.get("sale_price_whole") is not None else None,
+        sale_price_parts=float(data["sale_price_parts"]) if data.get("sale_price_parts") is not None else None,
     )

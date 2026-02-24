@@ -165,6 +165,8 @@ def _listing_from_mapping(row: Mapping[str, Any]) -> ListingRecord:
         shipping=float(row["shipping"]) if row.get("shipping") is not None else None,
         condition_raw=str(row["condition_raw"]) if row.get("condition_raw") is not None else None,
         url=str(row["url"]) if row.get("url") is not None else None,
+        sale_price_whole=float(row["sale_price_whole"]) if row.get("sale_price_whole") is not None else None,
+        sale_price_parts=float(row["sale_price_parts"]) if row.get("sale_price_parts") is not None else None,
     )
 
 

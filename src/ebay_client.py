@@ -41,6 +41,8 @@ class ListingRecord:
     shipping: float | None = None
     condition_raw: str | None = None
     url: str | None = None
+    sale_price_whole: float | None = None
+    sale_price_parts: float | None = None
 
 
 class EbayClient(Protocol):
