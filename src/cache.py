@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from src.ebay_client import EbayClient, ListingRecord, SearchRequest
@@ -44,6 +45,68 @@ class InMemorySearchCache:
         )
         self._entries[key] = entry
         return entry
+
+
+class FileSearchCache:
+    """JSON file-backed cache implementing the SearchCache contract."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+
+    def get(self, key: str) -> CacheEntry | None:
+        entries = self._load_entries()
+        return entries.get(key)
+
+    def put(self, key: str, value: Sequence[Mapping[str, Any]], fetched_at_epoch: float) -> CacheEntry:
+        entries = self._load_entries()
+        entry = CacheEntry(
+            key=key,
+            value=[dict(row) for row in value],
+            fetched_at_epoch=fetched_at_epoch,
+        )
+        entries[key] = entry
+        self._save_entries(entries)
+        return entry
+
+    def _load_entries(self) -> dict[str, CacheEntry]:
+        if not self._path.exists():
+            return {}
+
+        raw = self._path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {}
+
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("cache file must contain a JSON object")
+
+        entries: dict[str, CacheEntry] = {}
+        for cache_key, row in payload.items():
+            if not isinstance(row, dict):
+                continue
+            if "value" not in row or "fetched_at_epoch" not in row:
+                continue
+            entries[cache_key] = CacheEntry(
+                key=cache_key,
+                value=[dict(item) for item in row["value"]],
+                fetched_at_epoch=float(row["fetched_at_epoch"]),
+            )
+        return entries
+
+    def _save_entries(self, entries: Mapping[str, CacheEntry]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            key: {
+                "key": entry.key,
+                "value": entry.value,
+                "fetched_at_epoch": entry.fetched_at_epoch,
+            }
+            for key, entry in sorted(entries.items())
+        }
+        self._path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
 
 def build_search_cache_key(request: SearchRequest) -> str:
