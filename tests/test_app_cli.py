@@ -164,6 +164,69 @@ def test_main_search_market_data_mode_uses_file_cache(tmp_path, capsys):
     assert persisted[0]["item_id"] == "seed-1"
 
 
+def test_main_search_market_data_warm_cache_is_fast_and_skips_extra_calls(tmp_path, capsys):
+    market_path = tmp_path / "market.json"
+    cache_path = tmp_path / "cache.json"
+    storage_path = tmp_path / "raw_results.json"
+    market_rows = [
+        {
+            "title": "MacBook Pro A1990 used",
+            "item_id": "speed-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition_raw": "Used",
+        }
+    ]
+    market_path.write_text(json.dumps(market_rows), encoding="utf-8")
+
+    first_exit = main(
+        [
+            "search",
+            "A1990",
+            "--market-data",
+            str(market_path),
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    first_payload = json.loads(capsys.readouterr().out)
+
+    market_rows[0]["item_id"] = "speed-2"
+    market_path.write_text(json.dumps(market_rows), encoding="utf-8")
+
+    import time
+
+    start = time.perf_counter()
+    second_exit = main(
+        [
+            "search",
+            "A1990",
+            "--market-data",
+            str(market_path),
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1001",
+        ]
+    )
+    elapsed = time.perf_counter() - start
+    second_payload = json.loads(capsys.readouterr().out)
+
+    assert first_exit == 0
+    assert second_exit == 0
+    assert first_payload[0]["source"] == "fresh"
+    assert second_payload[0]["source"] == "cache"
+    assert second_payload[0]["item_id"] == "speed-1"
+    assert elapsed < 3.0
+
+
 def test_main_search_use_ebay_api_mode(monkeypatch, tmp_path, capsys):
     class _FakeRealClient:
         def __init__(self) -> None:
