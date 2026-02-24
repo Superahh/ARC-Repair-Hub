@@ -121,6 +121,7 @@ def search_records(
     records: Sequence[dict[str, object]],
     source: str = "local",
     warning: str | None = None,
+    timestamp: float | None = None,
 ) -> list[dict[str, object]]:
     """Filter records by query, evaluate ROI paths, and return ranked output rows."""
     query_lower = query.lower().strip()
@@ -137,7 +138,10 @@ def search_records(
             continue
 
     ranked = rank_listings(candidates)
-    return [_evaluated_to_output_row(listing, source=source, warning=warning) for listing in ranked]
+    return [
+        _evaluated_to_output_row(listing, source=source, warning=warning, timestamp=timestamp)
+        for listing in ranked
+    ]
 
 
 def _sort_key(listing: EvaluatedListing) -> tuple[int, float, float, str]:
@@ -172,6 +176,7 @@ def _evaluated_to_output_row(
     listing: EvaluatedListing,
     source: str = "local",
     warning: str | None = None,
+    timestamp: float | None = None,
 ) -> dict[str, object]:
     return {
         "title": listing.title,
@@ -188,7 +193,7 @@ def _evaluated_to_output_row(
         "reason_tags": list(listing.risk_reasons),
         "source": source,
         "warning": warning,
-        "timestamp": None,
+        "timestamp": timestamp,
         "dedupe_key": dedupe_key_for_listing({"item_id": listing.item_id}),
     }
 
@@ -317,6 +322,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 records=_listing_records_to_rows(run.records),
                 source=run.source,
                 warning=run.warning,
+                timestamp=run.fetched_at_epoch,
             )
         else:
             rows = search_records(query=args.query, records=_load_records(args.input))

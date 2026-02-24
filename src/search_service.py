@@ -21,6 +21,7 @@ class SearchRunResult:
     request: SearchRequest
     records: list[ListingRecord]
     source: Literal["fresh", "cache", "cache_fallback", "empty"]
+    fetched_at_epoch: float | None
     warning: str | None
     persisted_rows: int
 
@@ -55,10 +56,12 @@ def search_and_store(
 
     warning: str | None = None
     source: Literal["fresh", "cache", "cache_fallback", "empty"]
+    fetched_at_epoch: float | None = None
 
     if cached_entry and is_cache_entry_fresh(cached_entry, now_epoch=now_epoch, ttl_seconds=ttl_seconds):
         records = [_record_from_dict(row) for row in cached_entry.value]
         source = "cache"
+        fetched_at_epoch = cached_entry.fetched_at_epoch
     else:
         try:
             records = client.search(request)
@@ -68,14 +71,17 @@ def search_and_store(
                 fetched_at_epoch=now_epoch,
             )
             source = "fresh"
+            fetched_at_epoch = now_epoch
         except Exception as exc:  # pragma: no cover - explicit fallback path tests cover this.
             if cached_entry:
                 records = [_record_from_dict(row) for row in cached_entry.value]
                 source = "cache_fallback"
+                fetched_at_epoch = cached_entry.fetched_at_epoch
                 warning = f"api_failed_using_cache:{exc.__class__.__name__}"
             else:
                 records = []
                 source = "empty"
+                fetched_at_epoch = None
                 warning = f"api_failed_no_cache:{exc.__class__.__name__}"
 
     rows = [_record_to_storage_row(record) for record in records]
@@ -85,6 +91,7 @@ def search_and_store(
         request=request,
         records=records,
         source=source,
+        fetched_at_epoch=fetched_at_epoch,
         warning=warning,
         persisted_rows=len(merged),
     )

@@ -138,8 +138,10 @@ def test_main_search_market_data_mode_uses_file_cache(tmp_path, capsys):
     assert second_exit == 0
     assert first_payload[0]["source"] == "fresh"
     assert first_payload[0]["item_id"] == "seed-1"
+    assert first_payload[0]["timestamp"] == 1000.0
     assert second_payload[0]["source"] == "cache"
     assert second_payload[0]["item_id"] == "seed-1"
+    assert second_payload[0]["timestamp"] == 1000.0
     persisted = json.loads(storage_path.read_text(encoding="utf-8"))
     assert len(persisted) == 1
     assert persisted[0]["item_id"] == "seed-1"

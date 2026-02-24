@@ -34,6 +34,7 @@ def test_search_and_store_fetches_fresh_and_persists(tmp_path):
     )
 
     assert result.source == "fresh"
+    assert result.fetched_at_epoch == 1000.0
     assert result.warning is None
     assert len(result.records) == 1
     assert result.persisted_rows == 1
@@ -66,7 +67,9 @@ def test_search_and_store_uses_cache_when_fresh_and_avoids_extra_call(tmp_path):
     )
 
     assert first.source == "fresh"
+    assert first.fetched_at_epoch == 1000.0
     assert second.source == "cache"
+    assert second.fetched_at_epoch == 1000.0
     assert len(client.calls) == 1
     assert second.persisted_rows == 1
     stored = load_results(path)
@@ -101,6 +104,7 @@ def test_search_and_store_falls_back_to_cached_on_client_failure(tmp_path):
     )
 
     assert failed.source == "cache_fallback"
+    assert failed.fetched_at_epoch == 1000.0
     assert failed.warning == "api_failed_using_cache:RuntimeError"
     assert len(failed.records) == 1
     assert failed.persisted_rows == 1
@@ -120,6 +124,7 @@ def test_search_and_store_returns_empty_when_no_cache_and_client_fails(tmp_path)
     )
 
     assert result.source == "empty"
+    assert result.fetched_at_epoch is None
     assert result.warning == "api_failed_no_cache:RuntimeError"
     assert result.records == []
     assert result.persisted_rows == 0
