@@ -11,7 +11,8 @@ Local-first sourcing assistant for evaluating resale opportunities with determin
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -U pip pytest
+.venv/bin/python -m pip install -U pip
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
 ## Run
