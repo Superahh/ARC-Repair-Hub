@@ -8,6 +8,7 @@ def test_evaluate_listing_uses_roi_engine_and_picks_best_path():
         purchase_price=200,
         sale_price_whole=400,
         sale_price_parts=500,
+        condition_raw="Used",
         shipping_cost=20,
     )
 
@@ -18,6 +19,9 @@ def test_evaluate_listing_uses_roi_engine_and_picks_best_path():
     assert evaluated.roi_parts.reason == "ok"
     assert evaluated.roi_best == evaluated.roi_parts
     assert evaluated.total_cost == 220
+    assert evaluated.condition_normalized == "used"
+    assert evaluated.risk_score == 0
+    assert evaluated.risk_reasons == ("ok",)
 
 
 def test_rank_listings_orders_by_best_profit_and_handles_missing_prices():
