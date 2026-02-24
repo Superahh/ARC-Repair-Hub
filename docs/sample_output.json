@@ -1,0 +1,84 @@
+[
+  {
+    "ROI_best": {
+      "profit": 199.7,
+      "reason": "ok",
+      "revenue_net": 419.7,
+      "roi_pct": 90.77272727272727,
+      "sale_price": 500.0,
+      "total_cost": 220.0
+    },
+    "ROI_parts": {
+      "profit": 199.7,
+      "reason": "ok",
+      "revenue_net": 419.7,
+      "roi_pct": 90.77272727272727,
+      "sale_price": 500.0,
+      "total_cost": 220.0
+    },
+    "ROI_whole": {
+      "profit": 132.5,
+      "reason": "ok",
+      "revenue_net": 352.5,
+      "roi_pct": 60.22727272727273,
+      "sale_price": 420.0,
+      "total_cost": 220.0
+    },
+    "best_path": "parts",
+    "condition_normalized": "used",
+    "condition_raw": "Used",
+    "dedupe_key": "item_id:mbp-a1990-1",
+    "item_id": "mbp-a1990-1",
+    "price": 200.0,
+    "reason_tags": [
+      "ok"
+    ],
+    "risk_score": 0,
+    "shipping": 20.0,
+    "source": "fresh",
+    "timestamp": null,
+    "title": "MacBook Pro A1990 used",
+    "warning": null
+  },
+  {
+    "ROI_best": {
+      "profit": 37.099999999999966,
+      "reason": "ok",
+      "revenue_net": 302.09999999999997,
+      "roi_pct": 13.999999999999988,
+      "sale_price": 360.0,
+      "total_cost": 265.0
+    },
+    "ROI_parts": {
+      "profit": 37.099999999999966,
+      "reason": "ok",
+      "revenue_net": 302.09999999999997,
+      "roi_pct": 13.999999999999988,
+      "sale_price": 360.0,
+      "total_cost": 265.0
+    },
+    "ROI_whole": {
+      "profit": -13.300000000000011,
+      "reason": "ok",
+      "revenue_net": 251.7,
+      "roi_pct": -5.0188679245283065,
+      "sale_price": 300.0,
+      "total_cost": 265.0
+    },
+    "best_path": "parts",
+    "condition_normalized": "for_parts",
+    "condition_raw": "For parts",
+    "dedupe_key": "item_id:mbp-a1990-2",
+    "item_id": "mbp-a1990-2",
+    "price": 240.0,
+    "reason_tags": [
+      "ok"
+    ],
+    "risk_score": 0,
+    "shipping": 25.0,
+    "source": "fresh",
+    "timestamp": null,
+    "title": "MacBook Pro A1990 for parts",
+    "warning": null
+  }
+]
