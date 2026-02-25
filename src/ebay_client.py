@@ -315,7 +315,10 @@ class RealEbayClient:
 
 
 def _listing_record_from_item(item: dict[str, Any]) -> ListingRecord | None:
+    url = str(item.get("itemWebUrl") or "").strip()
     item_id = str(item.get("itemId") or item.get("legacyItemId") or "").strip()
+    if not item_id and url:
+        item_id = f"url:{url}"
     title = str(item.get("title") or "").strip()
     price = _extract_money_value(item.get("price"))
 
@@ -324,7 +327,7 @@ def _listing_record_from_item(item: dict[str, Any]) -> ListingRecord | None:
 
     shipping = _extract_shipping_value(item.get("shippingOptions"))
     condition = str(item.get("condition")) if item.get("condition") is not None else None
-    url = str(item.get("itemWebUrl")) if item.get("itemWebUrl") is not None else None
+    normalized_url = url if url else None
 
     return ListingRecord(
         title=title,
@@ -332,7 +335,7 @@ def _listing_record_from_item(item: dict[str, Any]) -> ListingRecord | None:
         price=price,
         shipping=shipping,
         condition_raw=condition,
-        url=url,
+        url=normalized_url,
     )
 
 

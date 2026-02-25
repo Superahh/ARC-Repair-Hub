@@ -201,3 +201,27 @@ def test_real_client_raises_after_retry_exhausted(monkeypatch):
     assert calls["count"] == 2
     assert exc_info.value.status_code == 503
     assert exc_info.value.retryable is True
+
+
+def test_real_client_maps_item_without_item_id_using_url_fallback(monkeypatch):
+    def fake_urlopen(request, timeout):
+        return _FakeResponse(
+            {
+                "itemSummaries": [
+                    {
+                        "title": "MacBook Pro A1990 used",
+                        "price": {"value": "200"},
+                        "condition": "Used",
+                        "itemWebUrl": "https://example.com/items/abc",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("src.ebay_client.urlopen", fake_urlopen)
+    client = RealEbayClient(token_provider=StaticAccessTokenProvider("static-token"))
+    results = client.search(SearchRequest(query="A1990"))
+
+    assert len(results) == 1
+    assert results[0].item_id == "url:https://example.com/items/abc"
+    assert results[0].url == "https://example.com/items/abc"
