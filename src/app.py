@@ -6,12 +6,15 @@ import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Sequence
 
 from src.cache import FileSearchCache
 from src.config import (
+    DEFAULT_BENCHMARK_CACHE_PATH,
+    DEFAULT_BENCHMARK_STORAGE_PATH,
     DEFAULT_CACHE_PATH,
     DEFAULT_FIXED_FEE,
     DEFAULT_LISTINGS_INPUT_PATH,
@@ -397,6 +400,70 @@ def run_ebay_smoke(
     return payload, 0
 
 
+def run_warm_cache_benchmark(
+    query: str,
+    sandbox: bool,
+    condition: str | None,
+    min_price: float | None,
+    max_price: float | None,
+    keywords: Sequence[str],
+    threshold_seconds: float,
+    cache_path: str | Path,
+    storage_path: str | Path,
+    reset_cache: bool,
+) -> tuple[dict[str, object], int]:
+    cache_file = Path(cache_path)
+    storage_file = Path(storage_path)
+    if reset_cache and cache_file.exists():
+        cache_file.unlink()
+
+    client = RealEbayClient.from_env(sandbox=sandbox)
+    cache = FileSearchCache(cache_file)
+
+    def run_once() -> tuple[object, float]:
+        start = time.perf_counter()
+        result = search_and_store(
+            client=client,
+            cache=cache,
+            storage_path=storage_file,
+            query=query,
+            condition=condition,
+            min_price=min_price,
+            max_price=max_price,
+            keywords=tuple(keywords),
+        )
+        elapsed = time.perf_counter() - start
+        return result, elapsed
+
+    first_run, first_elapsed = run_once()
+    second_run, second_elapsed = run_once()
+
+    warm_sources = {"cache", "cache_fallback"}
+    passed = second_elapsed <= threshold_seconds and second_run.source in warm_sources
+    payload = {
+        "ok": passed,
+        "query": query,
+        "threshold_seconds": threshold_seconds,
+        "cache_path": str(cache_file),
+        "storage_path": str(storage_file),
+        "first": {
+            "source": first_run.source,
+            "warning": first_run.warning,
+            "timestamp": first_run.fetched_at_epoch,
+            "result_count": len(first_run.records),
+            "elapsed_seconds": first_elapsed,
+        },
+        "second": {
+            "source": second_run.source,
+            "warning": second_run.warning,
+            "timestamp": second_run.fetched_at_epoch,
+            "result_count": len(second_run.records),
+            "elapsed_seconds": second_elapsed,
+        },
+    }
+    return payload, 0 if passed else 1
+
+
 def _detect_ebay_auth_mode() -> str:
     if os.getenv("EBAY_ACCESS_TOKEN", "").strip():
         return "access_token"
@@ -592,6 +659,59 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_ENV_FILE_PATH,
         help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
     )
+    benchmark_parser = subparsers.add_parser(
+        "benchmark-warm-cache",
+        help="Benchmark warm-cache search path against a latency threshold",
+    )
+    benchmark_parser.add_argument("--query", default="A1990", help="Benchmark query (default: A1990)")
+    benchmark_parser.add_argument(
+        "--threshold-seconds",
+        type=float,
+        default=3.0,
+        help="Pass threshold for second (warm-cache) run (default: 3.0)",
+    )
+    benchmark_parser.add_argument(
+        "--cache-path",
+        default=DEFAULT_BENCHMARK_CACHE_PATH,
+        help=f"Cache file path used for benchmark runs (default: {DEFAULT_BENCHMARK_CACHE_PATH})",
+    )
+    benchmark_parser.add_argument(
+        "--storage-path",
+        default=DEFAULT_BENCHMARK_STORAGE_PATH,
+        help=f"Storage file path used for benchmark runs (default: {DEFAULT_BENCHMARK_STORAGE_PATH})",
+    )
+    benchmark_parser.add_argument(
+        "--reset-cache",
+        action="store_true",
+        default=True,
+        help="Reset benchmark cache file before run (default: enabled)",
+    )
+    benchmark_parser.add_argument(
+        "--no-reset-cache",
+        action="store_false",
+        dest="reset_cache",
+        help="Do not reset benchmark cache file before run",
+    )
+    benchmark_parser.add_argument(
+        "--ebay-sandbox",
+        action="store_true",
+        help="Use eBay sandbox endpoints for benchmark",
+    )
+    benchmark_parser.add_argument("--condition", default=None, help="Optional condition filter")
+    benchmark_parser.add_argument("--min-price", type=float, default=None, help="Optional min purchase price")
+    benchmark_parser.add_argument("--max-price", type=float, default=None, help="Optional max purchase price")
+    benchmark_parser.add_argument(
+        "--keyword",
+        dest="keywords",
+        action="append",
+        default=[],
+        help="Optional keyword filter; repeat flag for multiple keywords",
+    )
+    benchmark_parser.add_argument(
+        "--env-file",
+        default=DEFAULT_ENV_FILE_PATH,
+        help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
+    )
 
     args = parser.parse_args(argv_list)
     load_env_file(args.env_file)
@@ -727,6 +847,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_price=args.min_price,
             max_price=args.max_price,
             keywords=tuple(args.keywords),
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return exit_code
+
+    if args.command == "benchmark-warm-cache":
+        preflight_error = validate_ebay_credentials()
+        if preflight_error:
+            payload = {
+                "ok": False,
+                "query": args.query,
+                "threshold_seconds": args.threshold_seconds,
+                "auth_mode": _detect_ebay_auth_mode(),
+                "error": preflight_error,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 1
+
+        payload, exit_code = run_warm_cache_benchmark(
+            query=args.query,
+            sandbox=args.ebay_sandbox,
+            condition=args.condition,
+            min_price=args.min_price,
+            max_price=args.max_price,
+            keywords=tuple(args.keywords),
+            threshold_seconds=args.threshold_seconds,
+            cache_path=args.cache_path,
+            storage_path=args.storage_path,
+            reset_cache=args.reset_cache,
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return exit_code

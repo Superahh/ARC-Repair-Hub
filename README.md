@@ -61,6 +61,12 @@ Run a one-call auth/search smoke diagnostic:
 .venv/bin/python -m src.app ebay-smoke --query "A1990"
 ```
 
+Run a warm-cache acceptance benchmark (passes when second run is <= threshold and cache-backed):
+
+```bash
+.venv/bin/python -m src.app benchmark-warm-cache --query "A1990" --threshold-seconds 3
+```
+
 When `sale_price_whole` / `sale_price_parts` are missing, the app applies deterministic fallback estimates and adds the `sale_prices_estimated` risk tag.
 
 Optional:
@@ -72,6 +78,7 @@ Optional:
 - `--env-file <path>` to load env vars from a custom file
 - `--purchase-price-override <float>` to force a single buy price for ROI evaluation
 - `--include-meta` to wrap search output with `{ok,query,count,source,warning,timestamp,rows}`
+- `benchmark-warm-cache` command with `--threshold-seconds`, `--cache-path`, `--storage-path`, and `--no-reset-cache`
 
 If a search returns no rows due to an upstream failure with no cache, output is automatically wrapped with metadata so warning diagnostics are visible.
 

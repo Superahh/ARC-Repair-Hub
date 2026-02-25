@@ -866,3 +866,112 @@ def test_main_search_local_input_applies_optional_filters(tmp_path, capsys):
 
     assert exit_code == 0
     assert [row["item_id"] for row in payload] == ["flt-1"]
+
+
+def test_main_benchmark_warm_cache_success(monkeypatch, tmp_path, capsys):
+    class _FakeRealClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="bench-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    fake_client = _FakeRealClient()
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: fake_client)
+
+    exit_code = main(
+        [
+            "benchmark-warm-cache",
+            "--query",
+            "A1990",
+            "--threshold-seconds",
+            "3",
+            "--cache-path",
+            str(tmp_path / "bench_cache.json"),
+            "--storage-path",
+            str(tmp_path / "bench_storage.json"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["query"] == "A1990"
+    assert payload["first"]["source"] == "fresh"
+    assert payload["second"]["source"] == "cache"
+    assert payload["second"]["elapsed_seconds"] <= 3.0
+    assert fake_client.calls == 1
+
+
+def test_main_benchmark_warm_cache_missing_credentials_fails_preflight(monkeypatch, capsys):
+    monkeypatch.delenv("EBAY_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("EBAY_CLIENT_SECRET", raising=False)
+
+    def should_not_be_called(*args, **kwargs):
+        raise AssertionError("RealEbayClient.from_env should not be called when preflight fails")
+
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", should_not_be_called)
+
+    exit_code = main(["benchmark-warm-cache", "--query", "A1990"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["query"] == "A1990"
+    assert payload["auth_mode"] == "unknown"
+    assert "Missing eBay credentials" in payload["error"]
+
+
+def test_main_benchmark_warm_cache_fails_threshold(monkeypatch, tmp_path, capsys):
+    class _FakeRealClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="bench-threshold-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    fake_client = _FakeRealClient()
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: fake_client)
+
+    timestamps = iter([0.0, 0.5, 10.0, 14.5])
+    monkeypatch.setattr("src.app.time.perf_counter", lambda: next(timestamps))
+
+    exit_code = main(
+        [
+            "benchmark-warm-cache",
+            "--query",
+            "A1990",
+            "--threshold-seconds",
+            "3",
+            "--cache-path",
+            str(tmp_path / "bench_cache.json"),
+            "--storage-path",
+            str(tmp_path / "bench_storage.json"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["first"]["source"] == "fresh"
+    assert payload["second"]["source"] == "cache"
+    assert payload["second"]["elapsed_seconds"] == 4.5
