@@ -316,6 +316,75 @@ def test_main_search_auto_uses_ebay_when_credentials_present(monkeypatch, tmp_pa
     assert "sale_prices_estimated" in payload[0]["reason_tags"]
 
 
+def test_main_search_auto_live_uses_warm_cache_without_second_api_call(monkeypatch, tmp_path, capsys):
+    class _HealthyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            return [
+                ListingRecord(
+                    title="MacBook Pro A1990 used",
+                    item_id="auto-cache-1",
+                    price=200.0,
+                    condition_raw="Used",
+                )
+            ]
+
+    class _BrokenClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, request):
+            self.calls += 1
+            raise RuntimeError("should not be called on warm cache")
+
+    healthy = _HealthyClient()
+    broken = _BrokenClient()
+    clients = [healthy, broken]
+    monkeypatch.setenv("EBAY_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr("src.app.RealEbayClient.from_env", lambda sandbox=False: clients.pop(0))
+
+    cache_path = tmp_path / "cache.json"
+    storage_path = tmp_path / "raw.json"
+
+    first_exit = main(
+        [
+            "search",
+            "A1990",
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1000",
+        ]
+    )
+    first_payload = json.loads(capsys.readouterr().out)
+
+    second_exit = main(
+        [
+            "search",
+            "A1990",
+            "--cache-path",
+            str(cache_path),
+            "--storage-path",
+            str(storage_path),
+            "--now-epoch",
+            "1001",
+        ]
+    )
+    second_payload = json.loads(capsys.readouterr().out)
+
+    assert first_exit == 0
+    assert second_exit == 0
+    assert first_payload[0]["source"] == "fresh"
+    assert second_payload[0]["source"] == "cache"
+    assert healthy.calls == 1
+    assert broken.calls == 0
+
+
 def test_main_search_explicit_input_overrides_auto_live(monkeypatch, tmp_path, capsys):
     input_path = tmp_path / "local.json"
     input_path.write_text(
