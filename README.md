@@ -71,6 +71,9 @@ Optional:
 - `--ebay-sandbox` (when `--use-ebay-api`)
 - `--env-file <path>` to load env vars from a custom file
 - `--purchase-price-override <float>` to force a single buy price for ROI evaluation
+- `--include-meta` to wrap search output with `{ok,query,count,source,warning,timestamp,rows}`
+
+If a search returns no rows due to an upstream failure with no cache, output is automatically wrapped with metadata so warning diagnostics are visible.
 
 ## Test
 

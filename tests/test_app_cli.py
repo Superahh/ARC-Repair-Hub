@@ -633,7 +633,46 @@ def test_main_search_use_ebay_api_no_cache_and_failure_returns_empty(monkeypatch
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert payload == []
+    assert payload["ok"] is False
+    assert payload["query"] == "A1990"
+    assert payload["count"] == 0
+    assert payload["source"] == "empty"
+    assert payload["warning"] == "api_failed_no_cache:RuntimeError"
+    assert payload["rows"] == []
+
+
+def test_main_search_include_meta_wraps_non_empty_results(tmp_path, capsys):
+    input_path = tmp_path / "listings.json"
+    input_rows = [
+        {
+            "title": "MacBook Pro A1990 used",
+            "item_id": "meta-1",
+            "price": 200,
+            "sale_price_whole": 420,
+            "sale_price_parts": 390,
+            "condition": "Used",
+        }
+    ]
+    input_path.write_text(json.dumps(input_rows), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "search",
+            "A1990",
+            "--input",
+            str(input_path),
+            "--include-meta",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["query"] == "A1990"
+    assert payload["count"] == 1
+    assert payload["source"] == "local"
+    assert payload["warning"] is None
+    assert payload["rows"][0]["item_id"] == "meta-1"
 
 
 def test_main_search_purchase_price_override_applies_to_local_input(tmp_path, capsys):

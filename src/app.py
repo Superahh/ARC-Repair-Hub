@@ -325,6 +325,31 @@ def _listing_records_to_rows(records: Sequence[ListingRecord]) -> list[dict[str,
     ]
 
 
+def _build_search_output(
+    rows: list[dict[str, object]],
+    *,
+    query: str,
+    source: str,
+    warning: str | None,
+    timestamp: float | None,
+    include_meta: bool = False,
+) -> list[dict[str, object]] | dict[str, object]:
+    """Return list output by default, with an optional diagnostic envelope."""
+    should_envelope = include_meta or (not rows and warning is not None)
+    if not should_envelope:
+        return rows
+
+    return {
+        "ok": warning is None,
+        "query": query,
+        "count": len(rows),
+        "source": source,
+        "warning": warning,
+        "timestamp": timestamp,
+        "rows": rows,
+    }
+
+
 def run_ebay_smoke(
     query: str,
     sandbox: bool,
@@ -536,6 +561,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Optional override purchase price applied to all evaluated listings",
     )
     search_parser.add_argument(
+        "--include-meta",
+        action="store_true",
+        help="Wrap search output with metadata (query/source/warning/timestamp/count)",
+    )
+    search_parser.add_argument(
         "--env-file",
         default=DEFAULT_ENV_FILE_PATH,
         help=f"Optional .env file path (default: {DEFAULT_ENV_FILE_PATH})",
@@ -585,6 +615,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             credentials_available=has_ebay_credentials(),
         )
 
+        output_source = "local"
+        output_warning: str | None = None
+        output_timestamp: float | None = None
+
         if search_mode == "live":
             preflight_error = validate_ebay_credentials()
             if preflight_error:
@@ -617,6 +651,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timestamp=run.fetched_at_epoch,
                 purchase_price_override=args.purchase_price_override,
             )
+            output_source = run.source
+            output_warning = run.warning
+            output_timestamp = run.fetched_at_epoch
         elif search_mode == "market":
             run = search_and_store(
                 client=StubEbayClient(_load_listing_records(args.market_data)),
@@ -637,6 +674,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timestamp=run.fetched_at_epoch,
                 purchase_price_override=args.purchase_price_override,
             )
+            output_source = run.source
+            output_warning = run.warning
+            output_timestamp = run.fetched_at_epoch
         else:
             rows = search_records(
                 query=args.query,
@@ -647,9 +687,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_price=args.max_price,
                 keywords=tuple(args.keywords),
             )
+            output_source = "local"
+            output_warning = None
+            output_timestamp = None
+
         if args.output:
             save_results(args.output, rows)
-        print(json.dumps(rows, indent=2, sort_keys=True))
+        payload = _build_search_output(
+            rows,
+            query=args.query,
+            source=output_source,
+            warning=output_warning,
+            timestamp=output_timestamp,
+            include_meta=args.include_meta,
+        )
+        print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
     if args.command == "ebay-smoke":
