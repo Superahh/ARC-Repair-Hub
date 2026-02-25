@@ -37,7 +37,7 @@ class SearchRequest:
     def normalized(self) -> SearchRequest:
         """Return a canonicalized request used for deterministic cache keys."""
         normalized_keywords = tuple(
-            sorted(keyword.strip().lower() for keyword in self.keywords if keyword.strip())
+            sorted({keyword.strip().lower() for keyword in self.keywords if keyword.strip()})
         )
         condition = self.condition.strip().lower() if self.condition else None
         return SearchRequest(

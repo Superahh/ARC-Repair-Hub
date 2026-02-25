@@ -21,7 +21,7 @@ def test_search_request_normalization_is_deterministic():
 
     assert normalized.query == "a1990"
     assert normalized.condition == "used"
-    assert normalized.keywords == ("battery", "logic board", "logic board")
+    assert normalized.keywords == ("battery", "logic board")
 
 
 def test_stub_ebay_client_filters_and_sorts_results():
